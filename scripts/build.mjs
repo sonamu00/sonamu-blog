@@ -16,7 +16,7 @@ for(const file of await readdir('content/posts')){
  if(meta.draft==='true')continue;
  const slug=file.replace(/\.md$/,'');
  if(!/^[a-z0-9-]+$/.test(slug))throw Error(`Invalid filename: ${file}`);
- posts.push({...meta,category:meta.category||'기록',tags:(meta.tags||'').replace(/^\[|\]$/g,'').split(',').map(t=>t.trim()).filter(Boolean),slug,file,body:match[2],minutes:Math.max(1,Math.ceil(match[2].length/700))});
+ posts.push({...meta,category:meta.category||'기록',tags:(meta.tags||'').replace(/^\[|\]$/g,'').split(',').map(t=>t.trim()).filter(Boolean),slug,file,body:match[2]});
 }
 posts.sort((a,b)=>b.date.localeCompare(a.date)||a.slug.localeCompare(b.slug));
 const categories=[...new Set(posts.map(p=>p.category))];
@@ -31,7 +31,7 @@ for(const p of posts){
  const html=marked.parse(p.body,{renderer});
  const toc=headings.map(h=>`<a class="depth-${h.depth}" href="#${h.id}">${h.text.replace(/<[^>]*>/g,'')}</a>`).join('');
  const mobileToc=toc?`<details class="mobile-toc"><summary>이 글의 목차</summary><nav aria-label="모바일 본문 목차">${toc}</nav></details>`:'';
- await page(`/posts/${p.slug}/`,p.title,`<article class="article"><header class="article-header"><a class="back" href="${href('/')}">← 모든 글</a><h1>${esc(p.title)}</h1><p>${esc(p.description||'')}</p><div class="meta"><time datetime="${p.date}">${icon('calendar')}${p.date.replaceAll('-','. ')}</time><a href="${href('/categories/')}#${encodeURIComponent(p.category)}">${icon('folder')}${esc(p.category)}</a><span>${p.minutes}분 읽기</span></div></header>${mobileToc}<div class="prose">${html}</div>${p.tags.length?`<div class="chips article-tags">${p.tags.map(t=>`<a href="${href('/tags/')}#${encodeURIComponent(t)}"># ${esc(t)}</a>`).join('')}</div>`:''}<div class="article-bottom"><span>Written by <strong>${esc(config.author)}</strong></span><a href="${repo}/edit/${config.branch}/content/posts/${p.file}">${icon('edit')}이 글 수정하기</a></div></article>`,toc);
+ await page(`/posts/${p.slug}/`,p.title,`<article class="article"><header class="article-header"><a class="back" href="${href('/')}">← 모든 글</a><h1>${esc(p.title)}</h1><p>${esc(p.description||'')}</p><div class="meta"><time datetime="${p.date}">${icon('calendar')}${p.date.replaceAll('-','. ')}</time><a href="${href('/categories/')}#${encodeURIComponent(p.category)}">${icon('folder')}${esc(p.category)}</a><span title="글 조회수 · Hits.sh 집계"><img src="https://hits.sh/${esc(new URL(config.url).host+base)}/posts/${p.slug}.svg?label=%EC%A1%B0%ED%9A%8C%EC%88%98&color=687c68&labelColor=555555" alt="조회수" height="20" referrerpolicy="no-referrer"></span></div></header>${mobileToc}<div class="prose">${html}</div>${p.tags.length?`<div class="chips article-tags">${p.tags.map(t=>`<a href="${href('/tags/')}#${encodeURIComponent(t)}"># ${esc(t)}</a>`).join('')}</div>`:''}<div class="article-bottom"><span>Written by <strong>${esc(config.author)}</strong></span><a href="${repo}/edit/${config.branch}/content/posts/${p.file}">${icon('edit')}이 글 수정하기</a></div></article>`,toc);
 }
 await page('/categories/','카테고리',heading('카테고리','주제별로 모아 둔 기록입니다.')+categories.map(c=>group(c,posts.filter(p=>p.category===c),href)).join(''));
 await page('/tags/','태그',heading('태그','키워드로 기록을 찾아보세요.')+(tags.length?tags.map(t=>group(t,posts.filter(p=>p.tags.includes(t)),href)).join(''):'<div class="empty">아직 등록된 태그가 없습니다.<p>글이 쌓이면 이곳에서 키워드별로 모아볼 수 있어요.</p></div>'));
