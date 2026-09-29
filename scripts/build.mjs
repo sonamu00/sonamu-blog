@@ -1,7 +1,9 @@
 import {readFile,readdir,mkdir,writeFile,cp,rm} from 'node:fs/promises';
 import {marked} from 'marked';
+import {shell,card,heading,group,icon,esc} from './layout.mjs';
 const config=JSON.parse(await readFile('site.json','utf8'));
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const base=new URL(config.url).pathname.replace(/\/$/,'');
+const href=p=>base+p;
 const repo=`https://github.com/${config.github}/${config.repository}`;
 const posts=[];
 for(const file of await readdir('content/posts')){
@@ -9,23 +11,36 @@ for(const file of await readdir('content/posts')){
  const source=await readFile(`content/posts/${file}`,'utf8');
  const match=source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
  if(!match)throw Error(`Missing frontmatter: ${file}`);
- const meta=Object.fromEntries(match[1].split(/\r?\n/).filter(Boolean).map(line=>{const i=line.indexOf(':');if(i<1)throw Error(`Invalid metadata in ${file}`);return [line.slice(0,i).trim(),line.slice(i+1).trim().replace(/^"(.*)"$/,'$1')];}));
+ const meta=Object.fromEntries(match[1].split(/\r?\n/).filter(Boolean).map(line=>{const i=line.indexOf(':');if(i<1)throw Error(`Invalid metadata: ${file}`);return [line.slice(0,i).trim(),line.slice(i+1).trim().replace(/^"(.*)"$/,'$1')];}));
  if(!meta.title||!/^\d{4}-\d{2}-\d{2}$/.test(meta.date)||!Number.isFinite(Date.parse(meta.date)))throw Error(`Invalid title/date: ${file}`);
  if(meta.draft==='true')continue;
  const slug=file.replace(/\.md$/,'');
- if(!/^[a-z0-9-]+$/.test(slug))throw Error(`Use lowercase letters, numbers and hyphens in filename: ${file}`);
- posts.push({...meta,slug,file,body:match[2],minutes:Math.max(1,Math.ceil(match[2].length/700))});
+ if(!/^[a-z0-9-]+$/.test(slug))throw Error(`Invalid filename: ${file}`);
+ posts.push({...meta,category:meta.category||'기록',tags:(meta.tags||'').replace(/^\[|\]$/g,'').split(',').map(t=>t.trim()).filter(Boolean),slug,file,body:match[2],minutes:Math.max(1,Math.ceil(match[2].length/700))});
 }
 posts.sort((a,b)=>b.date.localeCompare(a.date)||a.slug.localeCompare(b.slug));
-await rm('dist',{recursive:true,force:true}); await mkdir('dist',{recursive:true});await cp('public','dist',{recursive:true});
-const shell=(title,description,body,url='/',article=false)=>`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · ${esc(config.title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(config.url+url)}"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:type" content="${article?'article':'website'}"><meta property="og:url" content="${esc(config.url+url)}"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml"><link rel="stylesheet" href="/style.css"></head><body><a class="skip" href="#main">본문으로 건너뛰기</a><header class="header"><a class="brand" href="/"><span class="mark" aria-hidden="true">s.</span>${esc(config.title)}</a><nav aria-label="주 메뉴"><a href="/">모든 글</a><a href="https://github.com/${esc(config.github)}">GitHub ↗</a><a class="write" data-write href="${repo}/new/${config.branch}/content/posts">글쓰기 <span aria-hidden="true">↗</span></a></nav></header><main id="main">${body}</main><footer><span>© ${new Date().getFullYear()} ${esc(config.author)} <span class="footer-note">작은 기록이 쌓이는 곳.</span></span><a href="/feed.xml">RSS ↗</a></footer><script src="/site.js" defer></script></body></html>`.replaceAll('href="/','href="/sonamu-blog/').replaceAll('src="/','src="/sonamu-blog/');
-const card=(p,i)=>`<article class="post-row"><span class="post-number">${String(i+1).padStart(2,'0')}</span><div><div class="meta"><span class="category">${esc(p.category||'기록')}</span><time datetime="${p.date}">${p.date.replaceAll('-','. ')}</time><span>${p.minutes}분 읽기</span></div><h2><a href="/posts/${p.slug}/">${esc(p.title)}<span class="arrow" aria-hidden="true">↗</span></a></h2><p>${esc(p.description||'')}</p></div></article>`;
-await writeFile('dist/index.html',shell(config.title,config.description,`<section class="intro"><div class="eyebrow"><span class="dot"></span> NOTES BY ${esc(config.author).toUpperCase()}</div><h1>조금씩, 오래.<br><span>나만의 속도로 쌓는 기록.</span></h1><p>${esc(config.description)}</p><div class="intro-stamp" aria-hidden="true"><span>매일의 발견</span><b>기록<span>하다.</span></b><small>THINK · LEARN · WRITE</small></div></section><section class="posts" aria-labelledby="posts-title"><div class="section-top"><h2 id="posts-title">모든 기록 <small>${posts.length}</small></h2><span>최근에 쓴 글부터</span></div>${posts.length?posts.map(card).join(''):'<p class="empty">아직 기록이 없습니다. 첫 번째 이야기를 시작해 보세요.</p>'}</section>`));
-for(const p of posts){const url=`/posts/${p.slug}/`;await mkdir(`dist${url}`,{recursive:true});await writeFile(`dist${url}index.html`,shell(p.title,p.description||p.title,`<article class="article"><a class="back" href="/">← 모든 기록</a><header class="article-header"><div class="meta"><span class="category">${esc(p.category||'기록')}</span><time datetime="${p.date}">${p.date.replaceAll('-','. ')}</time><span>${p.minutes}분 읽기</span></div><h1>${esc(p.title)}</h1><p>${esc(p.description||'')}</p></header><div class="prose">${marked.parse(p.body)}</div><div class="article-bottom"><span>Written by ${esc(config.author)}</span><a href="${repo}/edit/${config.branch}/content/posts/${p.file}">이 글 수정하기 ↗</a></div></article>`,url,true));}
-await writeFile('dist/site.js',`document.querySelectorAll('[data-write]').forEach(a=>{const d=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const content='---\\ntitle: 새 글의 제목\\ndate: '+d+'\\ncategory: 기록\\ndescription: 이 글을 한 문장으로 소개해 주세요.\\n---\\n\\n여기에 본문을 작성하세요.\\n';a.href=${JSON.stringify(repo+'/new/'+config.branch+'/content/posts')}+'?filename='+encodeURIComponent(d+'-new-post.md')+'&value='+encodeURIComponent(content);});`);
+const categories=[...new Set(posts.map(p=>p.category))];
+const tags=[...new Set(posts.flatMap(p=>p.tags))];
+const context={config,posts,categories,href,repo};
+await rm('dist',{recursive:true,force:true});await mkdir('dist',{recursive:true});await cp('public','dist',{recursive:true});
+async function page(path,title,body,toc=''){const dir=path==='/'?'dist':`dist${path}`;await mkdir(dir,{recursive:true});await writeFile(`${dir}/index.html`,shell(context,title,body,path,toc));}
+await page('/',config.title,`${heading('모든 글',`배움과 생각의 조각들. <span class="count">${posts.length}개의 기록</span>`)}<div class="post-list">${posts.map(p=>card(p,href)).join('')||'<p class="empty">첫 번째 기록을 기다리고 있어요.</p>'}</div><div class="list-end"><span></span>기록은 계속됩니다<span></span></div>`);
+for(const p of posts){
+ let number=0;const headings=[];const renderer=new marked.Renderer();
+ renderer.heading=function({tokens,depth}){const text=this.parser.parseInline(tokens);const id=`section-${++number}`;if(depth===2||depth===3)headings.push({text,depth,id});return `<h${depth} id="${id}">${text}</h${depth}>`;};
+ const html=marked.parse(p.body,{renderer});
+ const toc=headings.map(h=>`<a class="depth-${h.depth}" href="#${h.id}">${h.text.replace(/<[^>]*>/g,'')}</a>`).join('');
+ const mobileToc=toc?`<details class="mobile-toc"><summary>이 글의 목차</summary><nav aria-label="모바일 본문 목차">${toc}</nav></details>`:'';
+ await page(`/posts/${p.slug}/`,p.title,`<article class="article"><header class="article-header"><a class="back" href="${href('/')}">← 모든 글</a><h1>${esc(p.title)}</h1><p>${esc(p.description||'')}</p><div class="meta"><time datetime="${p.date}">${icon('calendar')}${p.date.replaceAll('-','. ')}</time><a href="${href('/categories/')}#${encodeURIComponent(p.category)}">${icon('folder')}${esc(p.category)}</a><span>${p.minutes}분 읽기</span></div></header>${mobileToc}<div class="prose">${html}</div>${p.tags.length?`<div class="chips article-tags">${p.tags.map(t=>`<a href="${href('/tags/')}#${encodeURIComponent(t)}"># ${esc(t)}</a>`).join('')}</div>`:''}<div class="article-bottom"><span>Written by <strong>${esc(config.author)}</strong></span><a href="${repo}/edit/${config.branch}/content/posts/${p.file}">${icon('edit')}이 글 수정하기</a></div></article>`,toc);
+}
+await page('/categories/','카테고리',heading('카테고리','주제별로 모아 둔 기록입니다.')+categories.map(c=>group(c,posts.filter(p=>p.category===c),href)).join(''));
+await page('/tags/','태그',heading('태그','키워드로 기록을 찾아보세요.')+(tags.length?tags.map(t=>group(t,posts.filter(p=>p.tags.includes(t)),href)).join(''):'<div class="empty">아직 등록된 태그가 없습니다.<p>글이 쌓이면 이곳에서 키워드별로 모아볼 수 있어요.</p></div>'));
+await page('/archives/','아카이브',heading('아카이브',`${posts.length}개의 기록을 시간순으로 모았습니다.`)+[...new Set(posts.map(p=>p.date.slice(0,4)))].map(y=>group(y,posts.filter(p=>p.date.startsWith(y)),href)).join(''));
+await page('/about/','소개',heading('소개','소나무의 기록에 오신 것을 환영합니다.')+`<div class="prose"><h2>${esc(config.author)}</h2><p>${esc(config.description)}</p><p>이곳에는 배운 내용과 떠오른 생각을 기록합니다.<br>짧은 메모부터 오래 고민한 이야기까지 차곡차곡 모아갑니다.</p><p><a href="https://github.com/${esc(config.github)}">GitHub에서 만나기 ↗</a></p></div>`);
+await page('/search/','검색',heading('글 검색','제목, 본문, 카테고리에서 찾아보세요.')+`<form class="search-form" role="search"><label for="search-input" class="sr-only">검색어</label>${icon('search')}<input id="search-input" name="q" type="search" placeholder="어떤 기록을 찾고 있나요?" autocomplete="off"><button type="submit">검색</button></form><p id="search-status" role="status" class="search-status">검색어를 입력하세요.</p><div id="search-results"></div>`);
+await writeFile('dist/search.json',JSON.stringify(posts.map(p=>({title:p.title,description:p.description||'',body:p.body,category:p.category,tags:p.tags,url:href(`/posts/${p.slug}/`),date:p.date}))));
 await writeFile('dist/feed.xml',`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${esc(config.title)}</title><link>${config.url}</link><description>${esc(config.description)}</description><language>ko</language>${posts.map(p=>`<item><title>${esc(p.title)}</title><link>${config.url}/posts/${p.slug}/</link><guid>${config.url}/posts/${p.slug}/</guid><description>${esc(p.description||p.title)}</description><pubDate>${new Date(p.date+'T12:00:00+09:00').toUTCString()}</pubDate></item>`).join('')}</channel></rss>`);
-await writeFile('dist/sitemap.xml',`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${['/',...posts.map(p=>`/posts/${p.slug}/`)].map(p=>`<url><loc>${esc(config.url+p)}</loc></url>`).join('')}</urlset>`);
+await writeFile('dist/sitemap.xml',`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${['/','/categories/','/tags/','/archives/','/about/',...posts.map(p=>`/posts/${p.slug}/`)].map(p=>`<url><loc>${esc(config.url+p)}</loc></url>`).join('')}</urlset>`);
 await writeFile('dist/robots.txt',`User-agent: *\nAllow: /\nSitemap: ${config.url}/sitemap.xml\n`);
-await writeFile('dist/404.html',shell('페이지를 찾을 수 없습니다','요청한 페이지가 없습니다.','<section class="intro"><div class="eyebrow">404</div><h1>여기에는 아직<br>기록이 없어요.</h1><a href="/">모든 기록으로 돌아가기 →</a></section>'));
-await writeFile('dist/.nojekyll','');
-console.log(`Built ${posts.length} posts with RSS, sitemap and GitHub editing links.`);
+await writeFile('dist/404.html',shell(context,'페이지를 찾을 수 없습니다',heading('기록을 찾을 수 없어요','주소를 확인하거나 모든 글에서 찾아보세요.')+`<a class="back" href="${href('/')}">← 모든 글로 돌아가기</a>`,'/404.html'));
+await writeFile('dist/.nojekyll','');console.log(`Built ${posts.length} posts, categories, tags, archives, search, RSS and sitemap.`);
