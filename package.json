@@ -1,0 +1,12 @@
+{
+  "name": "sonamu-blog",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/preview.mjs"
+  },
+  "dependencies": {
+    "marked": "^16.3.0"
+  }
+}
