@@ -1,4 +1,5 @@
 import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -9,6 +10,16 @@ async function publish() {
   const {branch} = JSON.parse(await readFile('site.json', 'utf8'));
   const records = await readRecords(folder);
   const snapshot = JSON.stringify(records, null, 2) + '\n';
+  const fingerprint = createHash('sha256').update(snapshot).digest('hex');
+  const [mode, reviewed] = process.argv.slice(2);
+  if (mode === '--review') {
+    console.log(JSON.stringify({fingerprint, records: records.map(({title, date}) => ({title, date}))}));
+    return;
+  }
+  if (mode === '--reviewed' && reviewed !== fingerprint) {
+    throw new Error('미리보기 이후 노트가 바뀌었습니다. 발행 창을 다시 열어 주세요.');
+  }
+  if (mode && mode !== '--reviewed') throw new Error(`지원하지 않는 옵션: ${mode}`);
   const temporary = await mkdtemp(join(tmpdir(), 'sonamu-records-'));
   // Use a separate Git index so staged changes and local branches are untouched.
   const env = {...process.env, GIT_INDEX_FILE: join(temporary, 'index')};
